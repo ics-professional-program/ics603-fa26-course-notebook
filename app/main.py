@@ -52,7 +52,22 @@ def get_conn() -> Iterator[sqlite3.Connection]:
     """Open one connection for this request and close it when the request ends.
 
     10.1 replaces the call inside ``queries.connect()`` with a psycopg
-    connection. Nothing in this file changes.
+    connection. Most of this file is unaffected, but two things in it do have to
+    change, and both fail loudly rather than quietly:
+
+    1. Every ``except sqlite3.IntegrityError`` below catches the wrong class.
+       Psycopg raises ``psycopg.errors.IntegrityError``, which is a different
+       exception, so a duplicate email or a restricted delete would stop being a
+       409 and become an unhandled 500. There are seven of them in this file.
+       Import the database module's exception rather than naming ``sqlite3``
+       directly, so the handlers do not have to be found again next time.
+
+    2. The ``created_at`` and ``updated_at`` fields on the response models below
+       are typed ``str``. That is right for SQLite, which stores the text this
+       application wrote. PostgreSQL stores ``timestamptz`` and psycopg returns a
+       Python ``datetime``, which Pydantic will reject against a ``str`` field --
+       so routes that otherwise succeeded start failing when their response is
+       built. Change those fields to ``datetime``.
     """
     conn = queries.connect()
     try:
@@ -189,7 +204,7 @@ def _note_or_404(conn: sqlite3.Connection, note_id: int) -> NoteOut:
 
 
 # ---------------------------------------------------------------------------
-# Routes that do not touch the database
+# Routes that do not access the database
 # ---------------------------------------------------------------------------
 
 
@@ -375,7 +390,7 @@ def create_note(
     """Write a note into this notebook, with its tags, as one operation.
 
     Either the note and all of its tags are stored, or nothing is. A repeated or
-    unknown tag id is a 400 and leaves no note behind.
+    unknown tag id is a 400 and stores no note.
     """
     if queries.get_notebook(conn, notebook_id) is None:
         raise HTTPException(status_code=404, detail="No notebook with that id.")
@@ -409,7 +424,7 @@ def update_note(
     payload: NoteBodyIn,
     conn: sqlite3.Connection = Depends(get_conn),
 ):
-    """Replace a note's body. `updated_at` moves; `created_at` does not."""
+    """Replace a note's body. `updated_at` is set to the current UTC time; `created_at` does not change."""
     if queries.update_note_body(conn, note_id, payload.body) == 0:
         raise HTTPException(status_code=404, detail="No note with that id.")
     return _note_or_404(conn, note_id)
@@ -487,7 +502,7 @@ def attach_tag(
 ):
     """Put a tag on a note.
 
-    Applying a tag the note already carries is not an error; `attached` is false
+    Applying a tag the note already has is not an error; `attached` is false
     and nothing changed.
     """
     try:

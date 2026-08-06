@@ -38,8 +38,14 @@ SQLITE-SPECIFIC constructs in this file
   one statement and a schema file holds several. psycopg's ``execute`` accepts
   several statements in one string, so the call becomes an ordinary ``execute``.
 - ``with conn:`` as a transaction block. In psycopg 3 that closes the connection;
-  there it becomes ``with conn.transaction():``.
-- ``cursor.lastrowid``. PostgreSQL needs ``INSERT ... RETURNING id``.
+  there it becomes ``with conn.transaction():`` -- but only together with
+  ``psycopg.connect(..., autocommit=True)``. Without autocommit the schema
+  statements above open a transaction, this block becomes a savepoint inside it,
+  and closing the connection discards every seeded row while still printing the
+  expected counts. ``db/queries.py`` explains this in full.
+- ``cursor.lastrowid``. PostgreSQL needs ``INSERT ... RETURNING id`` followed
+  by ``fetchone()[0]``; psycopg returns rows as tuples, so a bare ``fetchone()``
+  gives ``(4,)`` rather than ``4``.
 - ``?`` placeholders. psycopg uses ``%s``.
 - Python ``bool`` values for ``compact_view``, an INTEGER column here.
 """
@@ -351,7 +357,8 @@ def seed_database(conn: sqlite3.Connection) -> None:
     """
     # SQLITE-SPECIFIC: `with conn:` opens a transaction and leaves the
     # connection open. In psycopg 3 it CLOSES the connection at the end of the
-    # block; there it becomes `with conn.transaction():`.
+    # block; there it becomes `with conn.transaction():`, and the connection
+    # must be opened with autocommit=True or nothing seeded here is committed.
     with conn:
         student_ids = {}
         for student in STUDENTS:
@@ -360,7 +367,8 @@ def seed_database(conn: sqlite3.Connection) -> None:
                 (student["name"], student["email"], student["created_at"]),
             )
             # SQLITE-SPECIFIC: lastrowid. PostgreSQL needs
-            # "INSERT ... RETURNING id" and then fetchone().
+            # "INSERT ... RETURNING id" and then fetchone()[0]; psycopg
+            # returns a tuple, so a bare fetchone() gives (4,) rather than 4.
             student_ids[student["email"]] = cur.lastrowid
 
         notebook_ids = {}

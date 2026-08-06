@@ -4,6 +4,14 @@
 rows you expect, including how many, then run the function and compare. These
 tests are those predictions written as assertions, so they are checked again on
 every run instead of once by eye.
+
+SQLITE-SPECIFIC: this file is part of the 10.1 migration.
+
+These tests import ``sqlite3``, catch ``sqlite3.IntegrityError``, and assert on
+SQLite behavior such as ``PRAGMA foreign_keys`` and text timestamps. They change
+when ``db/`` changes. A migration that edits only ``db/`` and ``app/`` leaves a
+test suite that either fails for SQLite reasons or keeps testing behavior the
+application no longer has.
 """
 
 import sqlite3
@@ -112,7 +120,7 @@ def test_notes_with_notebook_name_joins_through_the_notebook(conn):
 
 
 def test_notes_with_tag(conn):
-    """Three notes carry Ana's 'sql' tag, ordered by title."""
+    """Three notes have Ana's 'sql' tag, ordered by title."""
     assert queries.notes_with_tag(conn, ANA, "sql") == [
         (3, "A junction table is what a many-to-many needs", "ICS 603 Building LLM Applications"),
         (2, "PRAGMA foreign_keys is per connection", "ICS 603 Building LLM Applications"),
@@ -269,7 +277,7 @@ def test_update_note_body_moves_updated_at_and_leaves_created_at(conn):
     now = conn.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')").fetchone()[0]
 
     assert after[3] == "Rewritten during review."
-    assert after[4] == before[4]  # created_at does not move
+    assert after[4] == before[4]  # created_at does not change
     assert after[5] != before[5]  # updated_at does
     assert after[5] <= now
 

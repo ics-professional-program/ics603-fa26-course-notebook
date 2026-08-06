@@ -11,7 +11,7 @@ Session 9.2, Step 1 says "read `docs/design.md`". This file is that file.
 ## Contents
 
 1. [The spec (version 1, from 9.2)](#the-spec-version-1-from-92)
-2. [Brainstorm: questions the spec does not answer](#brainstorm-questions-the-spec-does-not-answer)
+2. [Questions the spec does not answer](#brainstorm-questions-the-spec-does-not-answer)
 3. [Entities (Step 1)](#entities-step-1)
 4. [Relationships (Step 2)](#relationships-step-2)
 5. [Storage conventions](#storage-conventions)
@@ -60,7 +60,7 @@ Out of scope for version 1
 
 ---
 
-## Brainstorm: questions the spec does not answer
+## Questions the spec does not answer
 
 The spec states behavior and leaves the storage decisions open. Below is every
 question that had to be settled before any SQL could be written, each with the
@@ -104,7 +104,7 @@ named `exam` and permits a different student to have their own row also named
 `exam`.
 
 The cost is that the tag table has more rows than a global list would, and that
-every tag query carries a `student_id` filter. Both are acceptable at this size.
+every tag query includes a `student_id` filter. Both are acceptable at this size.
 
 ### D3. Can a note exist with no notebook?
 
@@ -114,8 +114,11 @@ every tag query carries a `student_id` filter. Both are acceptable at this size.
 notebook." Nothing in version 1 describes a note that is not in a notebook, and
 `NOT NULL` is what makes "belongs to one" a rule the database keeps rather than a
 sentence in a document. A consequence worth stating: creating the first note
-requires creating a notebook first, so the application creates a notebook when it
-creates the account.
+requires creating a notebook first. Version 1 does not create one automatically
+at signup — `create_student()` writes the account and its settings row and
+nothing else — so a new account must create a notebook before it can write a
+note. Creating a starting notebook at signup would be a reasonable version 2
+change; it is recorded here as a known limit rather than left to be discovered.
 
 ### D4. Is a note's body required?
 
@@ -211,7 +214,7 @@ change at all, and quietly discarding part of its input would break that.
 **Decision:** both `note_tags.note_id` and `note_tags.tag_id` are declared
 `ON DELETE CASCADE`.
 
-**Reason:** a row in `note_tags` records that one note carries one tag. It is not
+**Reason:** a row in `note_tags` records that one note has one tag. It is not
 data in its own right; without either end it has no meaning and could never be
 read again. Deleting a tag removes the labels it applied and leaves every note in
 place, which is what deleting a tag means.
@@ -246,7 +249,7 @@ is treated as an error by the application (`404` from the settings endpoint).
 relational schema has no way to require that a child row exists. 9.2 states this
 exactly, and this is where the application takes the rule over.
 
-The one-to-one values live in their own table rather than as extra columns on
+The one-to-one values are stored in their own table rather than as extra columns on
 `students` because the settings are read on their own — the settings screen — and
 are not needed by any query that lists notes.
 
@@ -286,7 +289,7 @@ never-changing rows would fail checklist row 8.
 
 **Decision:** no. `note_tags` holds `note_id` and `tag_id` and nothing else.
 
-**Reason:** 9.2 points out that a junction table may carry attributes describing
+**Reason:** 9.2 points out that a junction table may have columns that describe the relationship describing
 the pair, and gives `applied_at` as the example. Nothing in version 1 reads or
 displays when a tag was applied, and checklist row 8 rules out columns that no
 operation needs. If a later version wants "tags I used this week", `applied_at`
@@ -300,7 +303,7 @@ Six tables. 9.2 calls three to six a reasonable size for version 1.
 
 | Table | What it stores | Why version 1 needs it |
 |---|---|---|
-| `students` | one row per account | every other table hangs off it; the spec says accounts are separate |
+| `students` | one row per account | every other table is related to it; the spec says accounts are separate |
 | `notebooks` | one row per notebook | notes are collected in notebooks, usually one per course |
 | `notes` | one row per note | the thing the application exists to store |
 | `tags` | one row per tag name per student | the labels the student searches by |
@@ -325,9 +328,9 @@ every pair of tables.
 | notebook — notes | one-to-many | `notes.notebook_id` foreign key | no; `NOT NULL` (D3) |
 | student — notebooks | one-to-many | `notebooks.student_id` foreign key | no; `NOT NULL` |
 | student — tags | one-to-many | `tags.student_id` foreign key | no; `NOT NULL` (D2) |
-| notes — tags | many-to-many | junction table `note_tags`, composite primary key | yes; a note may carry no tags |
+| notes — tags | many-to-many | junction table `note_tags`, composite primary key | yes; a note may have no tags |
 | student — settings | one-to-one | `student_settings.student_id` foreign key **plus `UNIQUE`** | at most one; the application creates it (D12) |
-| settings — default notebook | one-to-one, optional | `student_settings.default_notebook_id` foreign key | yes; `NULL` means not chosen (D5) |
+| settings — default notebook | many-to-one, optional | `student_settings.default_notebook_id` foreign key, **no `UNIQUE`** | yes; `NULL` means not chosen (D5) |
 
 The line 9.2 warns about — "A note can be associated with several tags" — is the
 one that produces a `tags TEXT` column holding `'exam,sql'` if it is read
@@ -361,7 +364,7 @@ Run against `db/schema.sql` before any data was loaded, using the checklist from
 | 8 | Every table is needed by version 1 | Pass. `themes` and `courses` were considered and left out; `note_tags.applied_at` was left out for the same reason (D16). |
 | 9 | Dates and times use one recorded format | Pass. One format, recorded in a comment at the top of `db/schema.sql` (D7). |
 | 10 | Declared types match the values stored | Pass, with one thing to know. `compact_view` is declared `INTEGER` and holds 0 or 1, because SQLite has no boolean type. SQLite applies type affinity rather than rejecting a value of another type, so the `CHECK` constraint is what actually keeps the column to two values. |
-| 11 | Each relationship states what a parent deletion does | Pass. Every `REFERENCES` clause carries an explicit `ON DELETE` action: `RESTRICT` (D1), `CASCADE` (D10, D11), `SET NULL` (D5). |
+| 11 | Each relationship states what a parent deletion does | Pass. Every `REFERENCES` clause includes an explicit `ON DELETE` action: `RESTRICT` (D1), `CASCADE` (D10, D11), `SET NULL` (D5). |
 
 The only defect the review found was row 7, and it was corrected before
 `db/seed.py` was run for the first time.
@@ -373,7 +376,7 @@ question it answers. The four rows 9.2 requires are marked.
 
 | Function | Question it answers | 9.2 requirement |
 |---|---|---|
-| `create_student` | a student signs up — what rows does that create? | write across two tables in one transaction |
+| `create_student` | a student signs up — what rows does that create? | change two tables in one transaction |
 | `get_student` | who is this account? | one read |
 | `create_notebook` | start a notebook for a course | |
 | `get_notebook` | which notebook is this, and whose is it? | |
@@ -387,7 +390,7 @@ question it answers. The four rows 9.2 requires are marked.
 | `note_count_per_tag` | how many notes does each tag have? | an aggregate with `GROUP BY` |
 | `tags_used_at_least` | which tags have at least *n* notes? | |
 | `create_tag` | add a new label | |
-| `add_note_with_tags` | write a note and label it, as one action | write across two tables in one transaction |
+| `add_note_with_tags` | write a note and label it, as one action | change two tables in one transaction |
 | `attach_tag_to_note` | add one label to an existing note | |
 | `get_student_settings` | what are this student's settings? | |
 | `update_settings` | change the theme, default notebook, or list density | |
@@ -399,7 +402,13 @@ Stated here so a reader does not mistake them for oversights.
 - **A tag can be attached to another student's note.** `note_tags` joins a note
   to a tag. The note's owner is reached through its notebook and the tag's owner
   is on the tag row, and no single-table constraint compares the two. The
-  application only ever offers a student their own tags and their own notes, and
+  application is expected to offer a student only their own tags and their own
+  notes, but version 1 does not enforce that: `attach_tag_to_note()` and
+  `add_note_with_tags()` accept any note id and any tag id, so a caller that
+  supplies mismatched ids does create the wrong pair, and the tag counts then
+  include another student's note. This is a real defect rather than an accepted
+  limit, and it is the first thing to fix in version 2. What follows describes
+  the schema-level reason it is not caught, and
   `notes_with_tag()` filters on both sides, so the wrong pair is never created by
   the application. Enforcing it in the schema would need a `CHECK` across tables,
   which SQLite does not support in this form.

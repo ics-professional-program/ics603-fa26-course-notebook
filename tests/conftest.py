@@ -4,6 +4,14 @@ Each test gets a database of its own, built in a temporary directory from
 db/schema.sql and db/seed.py. The tests therefore run against the same sample
 rows a student sees after running the seed script, and a test that writes cannot
 disturb the next one.
+
+SQLITE-SPECIFIC: this file is part of the 10.1 migration.
+
+These tests import ``sqlite3``, catch ``sqlite3.IntegrityError``, and assert on
+SQLite behavior such as ``PRAGMA foreign_keys`` and text timestamps. They change
+when ``db/`` changes. A migration that edits only ``db/`` and ``app/`` leaves a
+test suite that either fails for SQLite reasons or keeps testing behavior the
+application no longer has.
 """
 
 import pytest

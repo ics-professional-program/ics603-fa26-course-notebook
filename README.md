@@ -8,7 +8,7 @@ part being taught.
 
 This is the instructor's reference implementation of the **Course Notebook**
 design document — the fallback spec printed in session 9.2 for students whose
-own project spec is too thin to build a database from.
+own project spec does not describe enough data to design a database to build a database from.
 
 ## The three jobs it does
 
@@ -41,7 +41,7 @@ comment at the place it appears, so the migration can be rehearsed by searching
 for that word:
 
 ```bash
-grep -rn "SQLITE-SPECIFIC" db/ app/
+grep -rn "SQLITE-SPECIFIC" db/ app/ tests/
 ```
 
 | What | Where | PostgreSQL form |
@@ -110,8 +110,7 @@ when that notebook is deleted — is written down with its reason in
 `uv` is what the course uses:
 
 ```bash
-uv lock                    # once, before the first run; uv.lock is not committed
-uv sync
+uv sync                    # uv.lock is committed; this installs exactly it
 uv run python db/seed.py   # creates app.db and loads the sample rows
 uv run uvicorn app.main:app --reload
 ```
@@ -179,7 +178,7 @@ curl -i -X DELETE localhost:8000/notebooks/1
 | `DELETE /notebooks/{id}` | delete a notebook | 404, **409 while it holds notes** |
 | `POST /notebooks/{id}/notes` | write a note with its tags | 404, 400 for an unknown tag id |
 | `GET /notes/{id}` | read one note | 404 |
-| `PATCH /notes/{id}` | replace the body; moves `updated_at` | 404 |
+| `PATCH /notes/{id}` | replace the body; sets `updated_at` to the current time | 404 |
 | `GET /students/{id}/notes` | this student's notes; `?tag=` filters | 404 for an unknown student |
 | `POST /students/{id}/tags` | create a tag | 404, 409 for a repeated name |
 | `GET /students/{id}/tags` | notes per tag, unused tags included | 404 |
@@ -204,16 +203,21 @@ The notes are dated across the Fall 2026 term.
 ## Building the image
 
 ```bash
-uv lock            # uv sync --locked in the Dockerfile needs this file
 docker build -t course-notebook .
 docker run -p 8000:8000 course-notebook
 curl localhost:8000/health
 ```
 
-Only `/health`, `/` and `/docs` answer there. `.dockerignore` keeps `*.db` out of
-the image, so the container has no database and every route that reads a table
-fails. That is the intended state at the end of 10.0; 10.1 gives the container a
+Only `/health`, `/`, `/docs` and `/openapi.json` answer there. `.dockerignore`
+keeps `*.db` out of the image, so the container has no database and every route
+that reads a table fails. That is the intended state at the end of 10.0; 10.1 gives the container a
 database, in a second container, running PostgreSQL.
 
-Both image tags in the Dockerfile (`python:3.12-slim` and `uv:0.9`) select a
-series rather than an exact build. Check them before the term.
+The Dockerfile pins `uv` to a complete version (`0.12.1`), so that tag keeps
+identifying the same image contents. `python:3.12-slim` names a series and can
+change. Check both before the term, and record a digest if the image contents
+have to stay exact.
+
+If you change a dependency in `pyproject.toml`, run `uv lock` and commit the
+result. `uv sync --locked` in the Dockerfile fails otherwise, which is the
+intended behavior: it reports that the lock file needs updating.

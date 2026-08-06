@@ -21,23 +21,54 @@ Here (``sqlite3``)           There (``psycopg`` 3)
 ``sqlite3.connect(path)``    ``psycopg.connect(os.environ["DATABASE_URL"])``
 ``PRAGMA foreign_keys = ON`` delete it; PostgreSQL always enforces foreign keys
 ``?`` placeholders           ``%s`` placeholders — every ``execute`` call below
-``cursor.lastrowid``         ``INSERT ... RETURNING id`` then ``fetchone()``
-``with conn:``               ``with conn.transaction():`` — see the note below
+``cursor.lastrowid``         ``INSERT ... RETURNING id``, then ``fetchone()[0]``
+``with conn:``               ``with conn.transaction():`` — read the note below
 ``strftime(...)``            ``now()``; PostgreSQL has no ``strftime``
 ``INSERT OR IGNORE``         ``INSERT ... ON CONFLICT DO NOTHING``
 Python ``bool`` for 0/1      the column becomes ``boolean``; see ``compact_view``
 ===========================  =================================================
 
-The ``with conn:`` row is the one that produces a confusing failure. In
-``sqlite3`` it opens a transaction and leaves the connection open. In psycopg 3
-it *closes the connection* at the end of the block, so code written this way
-appears to work once and then fails on the next query.
+Two rows above need more than a direct substitution.
+
+``fetchone()[0]``, not ``fetchone()``. Psycopg returns each row as a tuple by
+default, so ``RETURNING id`` followed by a bare ``fetchone()`` gives ``(4,)``
+rather than ``4``. The tuple is then bound into the next statement, where
+PostgreSQL expects an integer.
+
+``with conn.transaction():`` is only correct together with a connection that
+commits. This is the one that fails silently, so read it carefully. A psycopg
+connection is not in autocommit mode by default, and it opens a transaction at
+the *first* statement on that connection — including a ``SELECT``.
+
+A function here that only writes is unaffected: on a connection with nothing yet
+run on it, its ``conn.transaction()`` block is a real transaction and commits at
+the end. The failure appears when a read runs first on the same connection, and
+two places in this application do exactly that:
+
+- the ``POST /notebooks/{id}/notes`` route in ``app/main.py`` calls
+  ``get_notebook()`` to check the notebook exists, then calls ``add_note()``;
+- ``build()`` in ``db/seed.py`` runs the schema, then calls ``seed_database()``.
+
+In both, the first statement has already opened a transaction, so the
+``conn.transaction()`` block that follows creates a *savepoint* inside it rather
+than a transaction of its own. Leaving the block releases the savepoint; it does
+not commit. When the connection then closes with the outer transaction still
+open, psycopg rolls it back and the write is gone. Nothing raises an error, and
+``seed.py`` still prints the row counts it expected to insert.
+
+The fix is to state the connection policy at the same time, in ``connect()``:
+
+    conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
+
+With ``autocommit=True`` there is no outer transaction, so each
+``with conn.transaction():`` block is a real transaction that commits when the
+block ends, which is what the ``sqlite3`` code did. The course demonstration
+application ``demos/food-safety`` connects this same way.
 """
 
 import os
 import sqlite3
 from pathlib import Path
-from collections.abc import Sequence
 
 # The database file. 10.1 replaces this with a DATABASE_URL naming a PostgreSQL
 # service reached over the network, so the environment variable is already how
@@ -58,6 +89,13 @@ def connect(db_path=DB_PATH) -> sqlite3.Connection:
 
     Returns an open ``sqlite3.Connection``. The caller closes it.
     """
+    # SQLITE-SPECIFIC: 10.1 replaces this with
+    #     psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
+    # The autocommit argument is not optional here. Without it the first read in
+    # a function opens a transaction, every `with conn.transaction():` block
+    # after it becomes a savepoint rather than a transaction, and closing the
+    # connection discards the writes without raising anything. The module
+    # docstring works through why.
     conn = sqlite3.connect(db_path)
 
     # SQLITE-SPECIFIC: SQLite does not enforce foreign keys unless this is set,
@@ -84,8 +122,8 @@ def create_student(
     """A student signs up. What rows does that create?
 
     Creates the account and its one settings row. Two tables change, so both
-    changes happen or neither does — this is one of the two write-across-two-
-    tables operations 9.2 Step 6 requires.
+    changes happen or neither does — this is one of the two operations that change
+    two tables, which 9.2 Step 6 requires.
 
     The schema cannot require a settings row to exist: ``UNIQUE`` on
     ``student_settings.student_id`` enforces at most one, never exactly one. This
@@ -103,7 +141,8 @@ def create_student(
             (name, email),
         )
         # SQLITE-SPECIFIC: lastrowid. PostgreSQL needs
-        # "INSERT ... RETURNING id" followed by fetchone().
+        # "INSERT ... RETURNING id" followed by fetchone()[0] -- psycopg
+        # returns a tuple, so a bare fetchone() gives (4,) rather than 4.
         student_id = cur.lastrowid
 
         conn.execute(
@@ -393,11 +432,11 @@ def add_note_with_tags(
     notebook_id: int,
     title: str,
     body: str | None,
-    tag_ids: Sequence[int],
+    tag_ids: list[int],
 ) -> int:
     """Write a note and label it, as one action.
 
-    The second write-across-two-tables operation 9.2 Step 6 requires. The
+    The second operation that changes two tables 9.2 Step 6 requires. The
     requirement is not that a note has tags — ``tag_ids=[]`` is a valid call. The
     requirement is that the whole request either completes or changes nothing: if
     one tag insert fails, the note insert is undone with it.

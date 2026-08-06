@@ -7,6 +7,14 @@ docs/design.md.
 
 The exact wording of a `sqlite3.IntegrityError` differs between SQLite versions,
 so these tests check which statement fails, never the message text.
+
+SQLITE-SPECIFIC: this file is part of the 10.1 migration.
+
+These tests import ``sqlite3``, catch ``sqlite3.IntegrityError``, and assert on
+SQLite behavior such as ``PRAGMA foreign_keys`` and text timestamps. They change
+when ``db/`` changes. A migration that edits only ``db/`` and ``app/`` leaves a
+test suite that either fails for SQLite reasons or keeps testing behavior the
+application no longer has.
 """
 
 import sqlite3
@@ -40,7 +48,7 @@ def test_the_same_junction_pair_twice_is_rejected(conn):
     """2. The same (note, tag) pair inserted twice.
 
     This is the constraint behind "a student applies the same tag twice to one
-    note". The seeded data already carries the pair, so the first insert here is
+    note". The seeded data already contains the pair, so the first insert here is
     the duplicate.
     """
     pair = conn.execute("SELECT note_id, tag_id FROM note_tags LIMIT 1").fetchone()

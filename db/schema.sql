@@ -30,7 +30,13 @@
 --   notebook -> notes             one-to-many   foreign key on notes
 --   notes   <-> tags              many-to-many  junction table note_tags
 --   student  -> settings          one-to-one    foreign key + UNIQUE     (D12)
---   settings -> default notebook  one-to-one    foreign key, nullable     (D5)
+--   settings -> default notebook  many-to-one   foreign key, nullable     (D5)
+--
+--   The last row is NOT one-to-one, and the difference is the rule 9.2 gives:
+--   one-to-one is a foreign key PLUS UNIQUE.  default_notebook_id has no
+--   UNIQUE, so nothing stops two students' settings rows naming the same
+--   notebook.  Only same-owner enforcement would make that impossible, and
+--   version 1 does not have it.
 --
 -- ---------------------------------------------------------------------------
 -- SQLITE-SPECIFIC constructs
@@ -49,9 +55,14 @@
 
 -- ---------------------------------------------------------------------------
 -- students: one row per account.  The spec says accounts are not shared, so
--- every other table in this schema hangs off this one.
+-- every other table in this schema is related to this one.
 -- ---------------------------------------------------------------------------
 CREATE TABLE students (
+    -- 9.0 and 9.2 write this as "INTEGER PRIMARY KEY", which is enough.  The
+    -- extra word AUTOINCREMENT tells SQLite never to reuse an id that belonged
+    -- to a deleted row; without it, SQLite may hand a new row the id of the
+    -- highest deleted one.  It costs a little extra bookkeeping per insert.
+    --
     -- SQLITE-SPECIFIC: AUTOINCREMENT.  PostgreSQL writes this column as
     -- "id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY".
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,7 +146,7 @@ CREATE TABLE tags (
 -- ---------------------------------------------------------------------------
 -- note_tags: one row per (note, tag) pair.  This is the many-to-many
 -- relationship between notes and tags.  A foreign-key column holds one value,
--- so it cannot hold a list of tags; the pairs live in their own table.
+-- so it cannot hold a list of tags; the pairs are stored in their own table.
 --
 -- No AUTOINCREMENT here: the identity of a row is the pair, not a new number.
 -- No extra columns: version 1 never reads when a tag was applied, so applied_at

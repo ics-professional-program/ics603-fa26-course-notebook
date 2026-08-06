@@ -3,6 +3,14 @@
 4.3 makes the point that testing only valid requests leaves the validation and
 error paths unchecked, so each failure the design document describes has a test
 here as well.
+
+SQLITE-SPECIFIC: this file is part of the 10.1 migration.
+
+These tests import ``sqlite3``, catch ``sqlite3.IntegrityError``, and assert on
+SQLite behavior such as ``PRAGMA foreign_keys`` and text timestamps. They change
+when ``db/`` changes. A migration that edits only ``db/`` and ``app/`` leaves a
+test suite that either fails for SQLite reasons or keeps testing behavior the
+application no longer has.
 """
 
 from conftest import ANA, ANA_ICS603, ANA_READING_GROUP, MARCUS, NOELANI
@@ -259,7 +267,7 @@ def test_create_note_in_a_notebook_that_does_not_exist(client):
 
 
 def test_create_note_with_a_tag_that_does_not_exist(client):
-    """400, and no note is left behind: the whole operation is one transaction."""
+    """400, and no note is stored: the whole operation is one transaction."""
     before = len(client.get("/students/{}/notes".format(ANA)).json())
     response = client.post(
         "/notebooks/{}/notes".format(ANA_ICS603),
@@ -280,7 +288,7 @@ def test_update_a_note_body(client):
     assert response.status_code == 200
     assert response.json()["body"] == "Rewritten during review."
     assert response.json()["created_at"] == before["created_at"]
-    # updated_at moved. It is not compared with the seeded value: the sample
+    # the update statement set updated_at. It is not compared with the seeded value: the sample
     # rows are dated during the Fall 2026 term.
     assert response.json()["updated_at"] != before["updated_at"]
 

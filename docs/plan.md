@@ -33,7 +33,7 @@ The six `CREATE TABLE` statements and the two `CREATE INDEX` statements, and
 nothing else. No rows. It is read by `db/seed.py` through
 `conn.executescript()`, which is why it holds several statements in one file.
 
-It also carries the two comments 9.2 Step 7 asks for: which relationship kind was
+It also contains the two comments 9.2 Step 7 asks for: which relationship kind was
 chosen for each pair, and what format the date and time columns use.
 
 Every construct PostgreSQL rejects is marked `SQLITE-SPECIFIC` with the
@@ -92,7 +92,7 @@ Route functions do no SQL. They call `db/queries.py`, translate its return value
 into response models, and turn a missing row into `404`, a rejected foreign key
 into `404`, and a rejected delete into `409`.
 
-`GET /health` touches no database. 10.0 needs an endpoint that answers inside a
+`GET /health` does not access the database. 10.0 needs an endpoint that answers inside a
 container that has no database file.
 
 ### `tests/`
