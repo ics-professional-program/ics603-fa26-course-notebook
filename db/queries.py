@@ -129,8 +129,10 @@ def create_student(
     ``student_settings.student_id`` enforces at most one, never exactly one. This
     function is where "one settings row per student" is actually maintained.
 
-    Returns the new ``students.id``. Raises ``sqlite3.IntegrityError`` if the
-    email address is already used.
+    Returns the new ``students.id``. Raises ``sqlite3.IntegrityError`` in two
+    cases: the email address is already used, or ``theme`` is not one of
+    ``light``, ``dark`` or ``system``, which the ``CHECK`` constraint on
+    ``student_settings`` rejects.
     """
     # SQLITE-SPECIFIC: `with conn:` is a transaction block in sqlite3 and leaves
     # the connection open. In psycopg 3 it CLOSES the connection at the end of
@@ -276,6 +278,9 @@ def list_notebooks(
     that notebook, because the unmatched left row is still one joined row.
 
     Returns a list of ``(notebook_id, name, note_count)``, ordered by name.
+    Returns ``[]`` both when the student has no notebooks and when no student has
+    that id -- the query cannot tell those apart, so a caller that needs to
+    distinguish them checks the student separately.
     """
     return conn.execute(
         """
@@ -363,6 +368,13 @@ def update_note_body(conn: sqlite3.Connection, note_id: int, body: str) -> int:
     maintained: the column default covers the insert, and this statement covers
     every change afterwards.
 
+    The stored value has one-second precision, so two edits to the same note
+    within the same second record the same ``updated_at``. Sorting by it groups
+    those edits rather than ordering them, and comparing it against a previous
+    read cannot prove that no edit happened in between. Nothing in version 1
+    needs finer ordering; a version that did would store fractional seconds or a
+    separate revision number.
+
     Returns the number of rows changed: 1 normally, 0 when no note has that id.
     """
     with conn:  # SQLITE-SPECIFIC transaction block.
@@ -391,7 +403,8 @@ def notes_with_notebook_name(
     ``student_id`` column, so a note's owner is reached through its notebook.
 
     Returns a list of ``(note_id, title, notebook_name, updated_at)``, most
-    recently changed first.
+    recently changed first. Returns ``[]`` when the student has written no notes,
+    and also when no student has that id.
     """
     return conn.execute(
         """
@@ -414,7 +427,8 @@ def create_tag(conn: sqlite3.Connection, student_id: int, name: str) -> int:
     """Add a label this student can put on notes.
 
     Returns the new ``tags.id``. Raises ``sqlite3.IntegrityError`` if this
-    student already has a tag with this name. A different student may have one
+    student already has a tag with this name, or if no student has ``student_id``
+    -- the foreign key rejects it. A different student may have one
     with the same name; the constraint is ``UNIQUE (student_id, name)``.
     """
     with conn:  # SQLITE-SPECIFIC transaction block.
@@ -535,7 +549,8 @@ def note_count_per_tag(
     unmatched left row is still one joined row.
 
     Returns a list of ``(tag_id, name, note_count)``, largest count first and
-    then by name.
+    then by name. Returns ``[]`` when the student has no tags, and also when no
+    student has that id.
     """
     return conn.execute(
         """
@@ -563,7 +578,9 @@ def tags_used_at_least(
     and 9.1 asks for the form that works on both.
 
     Returns a list of ``(name, note_count)``, largest count first and then by
-    name. ``minimum=0`` returns every tag, including unused ones.
+    name. ``minimum=0`` returns every tag, including unused ones. Returns ``[]``
+    when no tag reaches ``minimum``, when the student has no tags, and when no
+    student has that id.
     """
     return conn.execute(
         """

@@ -424,7 +424,12 @@ def update_note(
     payload: NoteBodyIn,
     conn: sqlite3.Connection = Depends(get_conn),
 ):
-    """Replace a note's body. `updated_at` is set to the current UTC time; `created_at` does not change."""
+    """Replace a note's body.
+
+    `updated_at` is set to the current UTC time and `created_at` does not change.
+    The stored time has one-second precision, so two edits within the same second
+    record the same value.
+    """
     if queries.update_note_body(conn, note_id, payload.body) == 0:
         raise HTTPException(status_code=404, detail="No note with that id.")
     return _note_or_404(conn, note_id)

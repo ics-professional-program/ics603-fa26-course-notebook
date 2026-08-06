@@ -178,7 +178,7 @@ curl -i -X DELETE localhost:8000/notebooks/1
 | `DELETE /notebooks/{id}` | delete a notebook | 404, **409 while it holds notes** |
 | `POST /notebooks/{id}/notes` | write a note with its tags | 404, 400 for an unknown tag id |
 | `GET /notes/{id}` | read one note | 404 |
-| `PATCH /notes/{id}` | replace the body; sets `updated_at` to the current time | 404 |
+| `PATCH /notes/{id}` | replace the body; sets `updated_at` to the current time, to the second | 404 |
 | `GET /students/{id}/notes` | this student's notes; `?tag=` filters | 404 for an unknown student |
 | `POST /students/{id}/tags` | create a tag | 404, 409 for a repeated name |
 | `GET /students/{id}/tags` | notes per tag, unused tags included | 404 |
