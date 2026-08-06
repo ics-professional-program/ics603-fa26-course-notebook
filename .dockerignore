@@ -1,0 +1,20 @@
+.git
+.gitignore
+.env
+.venv
+__pycache__/
+.pytest_cache/
+
+# The development database stays out of the image. A database file does not
+# belong in an image, and this one may hold rows you do not want copied.
+#
+# The consequence is deliberate and 10.0 plans for it: a container built from
+# this Dockerfile starts with no database, so every route that reads a table
+# fails there. Check the build with GET /health, GET / or /docs, none of which
+# opens a connection. Giving the container real data is 10.1's subject, and the
+# answer there is PostgreSQL in a second container.
+*.db
+
+# Not needed at runtime; excluding them keeps the build context small.
+docs/
+tests/

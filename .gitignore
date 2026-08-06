@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Development data only. Recreate it with `python db/seed.py`.
+*.db

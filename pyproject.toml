@@ -1,0 +1,25 @@
+[project]
+name = "course-notebook"
+version = "1.0.0"
+description = "ICS 603 reference application: a study notebook on SQLite with raw SQL"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+]
+
+# The database is SQLite through the standard library's sqlite3 module, so it is
+# not listed here. Session 10.1 adds the PostgreSQL driver:
+#     uv add "psycopg[binary]" pgvector
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
